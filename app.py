@@ -51,6 +51,18 @@ def save_history(original_name, resized_name, width, height, fmt):
     conn.commit()
     conn.close()
 
+def get_history(limit=5):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT original_name, resized_name, width, height, format FROM history ORDER BY id DESC LIMIT ?", (limit,))
+        rows = c.fetchall()
+        conn.close()
+        return rows
+    except Exception as e:
+        logging.error(f"Error fetching history: {e}")
+        return []
+
 def process_image(file, width, height, selected_format, quality, lock_aspect, prefix=""):
     previews = []
     try:
@@ -103,6 +115,7 @@ def index():
     zip_file = None
     lock_aspect = False
     prefix = ""
+    history = get_history()
 
     if request.method == "POST":
         try:
@@ -156,7 +169,8 @@ def index():
         height=height,
         selected_format=selected_format,
         lock_aspect=lock_aspect,
-        prefix=prefix
+        prefix=prefix,
+        history=history
     )
 
 if __name__ == "__main__":

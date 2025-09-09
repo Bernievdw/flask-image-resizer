@@ -3,170 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <title>Image Resizer</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body {
-            background-color: #f5f5f5;
-            font-family: 'Segoe UI', sans-serif;
-        }
-
-        h1 {
-            color: #343a40;
-            margin-bottom: 30px;
-            text-align: center;
-        }
-
         #drop-zone {
             border: 2px dashed #6c757d;
-            border-radius: 10px;
             padding: 30px;
             text-align: center;
             cursor: pointer;
-            transition: background-color 0.3s, border-color 0.3s;
-            background-color: #ffffff;
         }
-
         #drop-zone.bg-light {
-            background-color: #e9ecef !important;
-            border-color: #495057 !important;
+            background-color: #f8f9fa;
         }
-
-        #drop-zone p {
-            font-size: 1.1rem;
-            color: #6c757d;
-        }
-
-        .preview {
-            margin-top: 40px;
-        }
-
-        .preview .card {
-            margin-bottom: 20px;
-            border: none;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-
         .preview img {
-            max-width: 100%;
-            transition: transform 0.2s;
-            border-bottom: 1px solid #dee2e6;
+            max-width: 150px;
+            margin: 5px;
         }
-
-        .preview img:hover {
-            transform: scale(1.05);
-        }
-
-        .preview .card-body {
-            text-align: center;
-            padding: 10px;
-        }
-
-        button.btn-primary {
-            background-color: #0d6efd;
-            border: none;
-            padding: 10px 25px;
-            font-size: 1rem;
-        }
-
-        button.btn-primary:hover {
-            background-color: #0b5ed7;
-        }
-
-        @media (min-width: 768px) {
-            .d-flex.preview-row {
-                flex-wrap: wrap;
-                gap: 20px;
-            }
-            .preview .card {
-                flex: 1 1 calc(50% - 20px);
-            }
+        .history img {
+            max-width: 100px;
+            margin: 3px;
         }
     </style>
 </head>
-<body class="p-5">
+<body class="container py-4">
+    <h1 class="mb-4">Image Resizer</h1>
 
-    <div class="container">
-        <h1>Image Resizer</h1>
+    {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
 
-        <form method="POST" enctype="multipart/form-data" class="mb-4">
-            <div class="mb-3">
-                <label class="form-label fw-bold">Choose images or drag them here:</label>
-                <div id="drop-zone">
-                    <p>Drag & drop images here or click to select files</p>
-                    <input type="file" id="file-input" name="images" multiple required hidden>
-                </div>
+    <form method="POST" enctype="multipart/form-data" class="mb-4">
+        <div class="mb-3">
+            <label class="form-label">Choose images or drag them here:</label>
+            <div id="drop-zone">
+                <p>Drag & drop images here or click to select files</p>
+                <input type="file" id="file-input" name="images" multiple required hidden>
             </div>
-            
-            <div class="mb-3">
-                <label class="form-label">Preset Sizes:</label>
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="preset_sizes" value="640x480" id="small">
-                <label class="form-check-label" for="small">Small (640x480)</label>
-            </div>
-    <div class="form-check">
-        <input class="form-check-input" type="checkbox" name="preset_sizes" value="1280x960" id="medium">
-        <label class="form-check-label" for="medium">Medium (1280x960)</label>
-    </div>
-    <div class="form-check">
-        <input class="form-check-input" type="checkbox" name="preset_sizes" value="1920x1080" id="large">
-        <label class="form-check-label" for="large">Large (1920x1080)</label>
-    </div>
-</div>
+        </div>
 
-            <div class="mb-3 row">
-                <div class="col-md-6">
-                    <label class="form-label">Width (px):</label>
-                    <input type="number" class="form-control" name="width" value="{{ width }}" required>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Height (px):</label>
-                    <input type="number" class="form-control" name="height" value="{{ height }}" required>
-                </div>
-                <div class="mb-3 form-check">
-                    <input type="checkbox" class="form-check-input" id="lock-aspect" name="lock_aspect" {% if lock_aspect %}checked{% endif %}>
-                    <label class="form-check-label" for="lock-aspect">Lock aspect ratio</label>
-                </div>
+        <div class="mb-3">
+            <label for="prefix" class="form-label">Filename prefix (optional):</label>
+            <input type="text" class="form-control" name="prefix" value="{{ prefix }}">
+        </div>
 
-            </div>
+        <div class="mb-3">
+            <label for="width" class="form-label">Width (px):</label>
+            <input type="number" class="form-control" name="width" value="{{ width }}" required>
+        </div>
 
-            <div class="mb-3 row">
-                <div class="col-md-6">
-                    <label class="form-label">Output format:</label>
-                    <select name="format" class="form-select">
-                        <option value="jpg" {% if selected_format == 'jpg' %}selected{% endif %}>JPG</option>
-                        <option value="png" {% if selected_format == 'png' %}selected{% endif %}>PNG</option>
-                        <option value="webp" {% if selected_format == 'webp' %}selected{% endif %}>WEBP</option>
-                        <option value="gif" {% if selected_format == 'gif' %}selected{% endif %}>GIF</option>
-                    </select>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Quality (JPEG/WEBP):</label>
-                    <input type="range" class="form-range" name="quality" min="10" max="100" value="80">
-                </div>
-            </div>
+        <div class="mb-3">
+            <label for="height" class="form-label">Height (px):</label>
+            <input type="number" class="form-control" name="height" value="{{ height }}" required>
+        </div>
 
-            <button type="submit" class="btn btn-primary">Resize Images</button>
-        </form>
+        <div class="mb-3">
+            <label for="format" class="form-label">Output format:</label>
+            <select name="format" class="form-select">
+                <option value="jpg" {% if selected_format == 'jpg' %}selected{% endif %}>JPG</option>
+                <option value="png" {% if selected_format == 'png' %}selected{% endif %}>PNG</option>
+                <option value="webp" {% if selected_format == 'webp' %}selected{% endif %}>WEBP</option>
+                <option value="gif" {% if selected_format == 'gif' %}selected{% endif %}>GIF</option>
+            </select>
+        </div>
 
+        <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" name="lock_aspect" id="lock_aspect" {% if lock_aspect %}checked{% endif %}>
+            <label class="form-check-label" for="lock_aspect">Lock aspect ratio</label>
+        </div>
+
+        <div class="mb-3">
+            <label for="quality" class="form-label">Quality (JPEG/WEBP):</label>
+            <input type="range" class="form-range" name="quality" min="10" max="100" value="80">
+        </div>
+
+        <button type="submit" class="btn btn-primary">Resize Images</button>
+    </form>
+
+    <div class="preview mb-4">
         {% if previews %}
-        <div class="preview d-flex preview-row">
+            <h4>Previews:</h4>
             {% for original, resized in previews %}
-                <div class="card">
-                    <img src="{{ original }}" alt="Original Image">
-                    <div class="card-body">
-                        <p class="mb-1 fw-bold">Original</p>
+                <div class="d-flex align-items-center mb-3">
+                    <div class="me-3 text-center">
+                        <p>Original</p>
+                        {% if original %}<img src="{{ original }}" alt="Original Image">{% endif %}
                     </div>
-                    <img src="{{ resized }}" alt="Resized Image">
-                    <div class="card-body">
-                        <p class="mb-0 fw-bold">Resized</p>
+                    <div class="text-center">
+                        <p>Resized</p>
+                        {% if resized %}<img src="{{ resized }}" alt="Resized Image">{% endif %}
                     </div>
                 </div>
             {% endfor %}
-        </div>
         {% endif %}
+    </div>
 
+    <div class="history mb-4">
+        {% if history %}
+            <h4>History (last 5 images):</h4>
+            {% for original_name, resized_name, width, height, fmt in history %}
+                <div class="d-flex align-items-center mb-2">
+                    <div class="me-3 text-center">
+                        <p>{{ original_name }}</p>
+                    </div>
+                    <div class="text-center">
+                        <p>{{ resized_name }} ({{ width }}x{{ height }}, {{ fmt }})</p>
+                    </div>
+                </div>
+            {% endfor %}
+        {% endif %}
     </div>
 
     <script>
@@ -187,9 +130,9 @@
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('bg-light');
-            fileInput.files = e.dataTransfer.files;
+            const files = e.dataTransfer.files;
+            fileInput.files = files;
         });
     </script>
-
 </body>
 </html>
