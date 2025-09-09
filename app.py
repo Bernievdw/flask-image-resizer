@@ -1,15 +1,103 @@
-from flask import Flask, render_template, request, send_from_directory, send_file
-from PIL import Image
-import os, zipfile, io
+from flask import Flask, render_template, request, send_file
+from PIL import Image, UnidentifiedImageError
+import os, zipfile, io, logging, sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
+# Folders
 UPLOAD_FOLDER = "static/uploads"
 RESIZED_FOLDER = "static/resized"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESIZED_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["RESIZED_FOLDER"] = RESIZED_FOLDER
+
+# Allowed types and max size (5 MB)
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+# Logging
+logging.basicConfig(level=logging.INFO)
+
+# Database for history
+DB_PATH = "image_history.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            original_name TEXT,
+            resized_name TEXT,
+            width INTEGER,
+            height INTEGER,
+            format TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def allowed_file(filename):
+    ext = filename.rsplit('.', 1)[-1].lower()
+    return ext in ALLOWED_EXTENSIONS
+
+def save_history(original_name, resized_name, width, height, fmt):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO history (original_name, resized_name, width, height, format)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (original_name, resized_name, width, height, fmt))
+    conn.commit()
+    conn.close()
+
+def process_image(file, width, height, selected_format, quality, lock_aspect, prefix=""):
+    previews = []
+    try:
+        original_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+        file.save(original_path)
+
+        if os.path.getsize(original_path) > MAX_FILE_SIZE:
+            raise ValueError(f"{file.filename} exceeds maximum size of 5MB.")
+
+        img = Image.open(original_path)
+        original_width, original_height = img.size
+
+        # Aspect ratio lock
+        new_width, new_height = width, height
+        if lock_aspect:
+            if width and not height:
+                new_height = int((width / original_width) * original_height)
+            elif height and not width:
+                new_width = int((height / original_height) * original_width)
+            elif width and height:
+                new_height = int((width / original_width) * original_height)
+
+        resized_img = img.resize((new_width, new_height))
+        filename_no_ext = os.path.splitext(file.filename)[0]
+        output_filename = f"{prefix}{filename_no_ext}_{new_width}x{new_height}.{selected_format.lower()}"
+        resized_path = os.path.join(app.config["RESIZED_FOLDER"], output_filename)
+        resized_img.save(resized_path, format=selected_format.upper(), quality=quality)
+
+        # Logging and history
+        logging.info(f"Resized {file.filename} → {output_filename}")
+        save_history(file.filename, output_filename, new_width, new_height, selected_format.upper())
+
+        previews.append((
+            f"/{original_path.replace(os.sep, '/')}",
+            f"/{resized_path.replace(os.sep, '/')}"
+        ))
+    except UnidentifiedImageError:
+        previews.append((None, None))
+        logging.error(f"Cannot identify image file {file.filename}")
+    except Exception as e:
+        previews.append((None, None))
+        logging.error(f"Error processing {file.filename}: {e}")
+    return previews
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -19,8 +107,8 @@ def index():
     height = ""
     selected_format = "jpg"
     zip_file = None
-    lock_aspect = False  # default: not locked
-    preset_sizes = []    # for batch resizing
+    lock_aspect = False
+    prefix = ""
 
     if request.method == "POST":
         try:
@@ -30,7 +118,7 @@ def index():
             selected_format = request.form.get("format", "jpg")
             quality = int(request.form.get("quality", 80))
             lock_aspect = bool(request.form.get("lock_aspect"))
-            preset_sizes = request.form.getlist("preset_sizes")  # list of "WIDTHxHEIGHT" strings
+            prefix = request.form.get("prefix", "")
 
             if len(files) == 0:
                 raise ValueError("No files uploaded.")
@@ -38,53 +126,28 @@ def index():
             width = int(width) if width else None
             height = int(height) if height else None
 
+            # Validate file extensions
+            for file in files:
+                if not allowed_file(file.filename):
+                    raise ValueError(f"{file.filename} has invalid file type.")
+
             if len(files) > 1:
                 zip_buffer = io.BytesIO()
                 zip_file = zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED)
 
-            for file in files:
-                if file:
-                    original_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-                    file.save(original_path)
-                    img = Image.open(original_path)
-                    original_width, original_height = img.size
-
-                    # Determine all target sizes
-                    sizes_to_apply = []
-
-                    if preset_sizes:
-                        for size in preset_sizes:
-                            w, h = map(int, size.split("x"))
-                            sizes_to_apply.append((w, h))
-                    else:
-                        sizes_to_apply.append((width, height))
-
-                    # Process all target sizes
-                    for new_width, new_height in sizes_to_apply:
-                        # Apply aspect ratio lock
-                        if lock_aspect:
-                            if new_width and not new_height:
-                                new_height = int((new_width / original_width) * original_height)
-                            elif new_height and not new_width:
-                                new_width = int((new_height / original_height) * original_width)
-                            elif new_width and new_height:
-                                new_height = int((new_width / original_width) * original_height)
-
-                        resized_img = img.resize((new_width, new_height))
-                        filename_no_ext = os.path.splitext(file.filename)[0]
-                        output_filename = f"{filename_no_ext}_{new_width}x{new_height}.{selected_format.lower()}"
-                        resized_path = os.path.join(app.config["RESIZED_FOLDER"], output_filename)
-                        resized_img.save(resized_path, format=selected_format.upper(), quality=quality)
-
-                        previews.append((
-                            f"/{original_path.replace(os.sep, '/')}",
-                            f"/{resized_path.replace(os.sep, '/')}"
-                        ))
-
-                        if zip_file:
-                            zip_file.write(resized_path, arcname=output_filename)
+            # Async processing
+            with ThreadPoolExecutor() as executor:
+                results = []
+                for file in files:
+                    results.append(executor.submit(process_image, file, width, height,
+                                                   selected_format, quality, lock_aspect, prefix))
+                for future in results:
+                    previews.extend(future.result())
 
             if zip_file:
+                for _, resized_path in previews:
+                    if resized_path:
+                        zip_file.write(resized_path.lstrip("/"), arcname=os.path.basename(resized_path))
                 zip_file.close()
                 zip_buffer.seek(0)
                 return send_file(zip_buffer, mimetype="application/zip",
@@ -101,7 +164,7 @@ def index():
         height=height,
         selected_format=selected_format,
         lock_aspect=lock_aspect,
-        preset_sizes=preset_sizes
+        prefix=prefix
     )
 
 if __name__ == "__main__":
