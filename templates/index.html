@@ -91,7 +91,6 @@
         <h1>Image Resizer</h1>
 
         <form method="POST" enctype="multipart/form-data" class="mb-4">
-            <!-- Drag & Drop -->
             <div class="mb-3">
                 <label class="form-label fw-bold">Choose images or drag them here:</label>
                 <div id="drop-zone">
@@ -99,8 +98,23 @@
                     <input type="file" id="file-input" name="images" multiple required hidden>
                 </div>
             </div>
+            
+            <div class="mb-3">
+                <label class="form-label">Preset Sizes:</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="preset_sizes" value="640x480" id="small">
+                <label class="form-check-label" for="small">Small (640x480)</label>
+            </div>
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="preset_sizes" value="1280x960" id="medium">
+        <label class="form-check-label" for="medium">Medium (1280x960)</label>
+    </div>
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="preset_sizes" value="1920x1080" id="large">
+        <label class="form-check-label" for="large">Large (1920x1080)</label>
+    </div>
+</div>
 
-            <!-- Width / Height -->
             <div class="mb-3 row">
                 <div class="col-md-6">
                     <label class="form-label">Width (px):</label>
@@ -110,9 +124,13 @@
                     <label class="form-label">Height (px):</label>
                     <input type="number" class="form-control" name="height" value="{{ height }}" required>
                 </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="lock-aspect" name="lock_aspect" {% if lock_aspect %}checked{% endif %}>
+                    <label class="form-check-label" for="lock-aspect">Lock aspect ratio</label>
+                </div>
+
             </div>
 
-            <!-- Format / Quality -->
             <div class="mb-3 row">
                 <div class="col-md-6">
                     <label class="form-label">Output format:</label>
@@ -132,7 +150,6 @@
             <button type="submit" class="btn btn-primary">Resize Images</button>
         </form>
 
-        <!-- Preview Section -->
         {% if previews %}
         <div class="preview d-flex preview-row">
             {% for original, resized in previews %}
