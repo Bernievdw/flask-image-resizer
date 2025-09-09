@@ -5,7 +5,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
-# Folders
 UPLOAD_FOLDER = "static/uploads"
 RESIZED_FOLDER = "static/resized"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -13,14 +12,11 @@ os.makedirs(RESIZED_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["RESIZED_FOLDER"] = RESIZED_FOLDER
 
-# Allowed types and max size (5 MB)
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_FILE_SIZE = 5 * 1024 * 1024 
 
-# Logging
 logging.basicConfig(level=logging.INFO)
 
-# Database for history
 DB_PATH = "image_history.db"
 
 def init_db():
@@ -67,7 +63,6 @@ def process_image(file, width, height, selected_format, quality, lock_aspect, pr
         img = Image.open(original_path)
         original_width, original_height = img.size
 
-        # Aspect ratio lock
         new_width, new_height = width, height
         if lock_aspect:
             if width and not height:
@@ -83,7 +78,6 @@ def process_image(file, width, height, selected_format, quality, lock_aspect, pr
         resized_path = os.path.join(app.config["RESIZED_FOLDER"], output_filename)
         resized_img.save(resized_path, format=selected_format.upper(), quality=quality)
 
-        # Logging and history
         logging.info(f"Resized {file.filename} → {output_filename}")
         save_history(file.filename, output_filename, new_width, new_height, selected_format.upper())
 
@@ -126,7 +120,6 @@ def index():
             width = int(width) if width else None
             height = int(height) if height else None
 
-            # Validate file extensions
             for file in files:
                 if not allowed_file(file.filename):
                     raise ValueError(f"{file.filename} has invalid file type.")
@@ -135,7 +128,6 @@ def index():
                 zip_buffer = io.BytesIO()
                 zip_file = zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED)
 
-            # Async processing
             with ThreadPoolExecutor() as executor:
                 results = []
                 for file in files:
