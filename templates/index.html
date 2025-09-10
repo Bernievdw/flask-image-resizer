@@ -31,13 +31,14 @@
         <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
 
-    <form method="POST" enctype="multipart/form-data" class="mb-4">
+    <form method="POST" enctype="multipart/form-data" class="mb-4" onsubmit="showLoading()">
         <div class="mb-3">
             <label class="form-label">Choose images or drag them here:</label>
             <div id="drop-zone">
                 <p>Drag & drop images here or click to select files</p>
                 <input type="file" id="file-input" name="images" multiple required hidden>
             </div>
+            <div id="client-preview" class="d-flex flex-wrap mb-3"></div>
         </div>
 
         <div class="mb-3">
@@ -108,7 +109,12 @@
             <label class="form-label">Watermark text (optional):</label>
             <input type="text" class="form-control" name="watermark_text" value="{{ watermark_text }}">
         </div>
-
+        <div id="loading" class="text-center my-3" style="display: none;">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Processing...</span>
+            </div>
+            <p>Resizing images, please wait...</p>
+        </div>
         <button type="submit" class="btn btn-primary">Resize Images</button>
     </form>
     
@@ -124,7 +130,13 @@
                     <div class="text-center">
                         <p>Resized</p>
                         {% if resized %}<img src="{{ resized }}" alt="Resized Image">{% endif %}
-                    </div>
+                </div>
+            {% if previews|length > 1 %}
+                <div class="mb-3">
+                    <a href="/static/resized/resized_images.zip" class="btn btn-success">
+                        Download All as ZIP
+                    </a>
+            {% endif %}
                 </div>
             {% endfor %}
         {% endif %}
@@ -176,5 +188,31 @@
             }
         });
     </script>
+    <script>
+    const clientPreview = document.getElementById('client-preview');
+
+    fileInput.addEventListener('change', () => {
+        clientPreview.innerHTML = ""; 
+        Array.from(fileInput.files).forEach(file => {
+            if (file.type.startsWith("image/")) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = document.createElement("img");
+                    img.src = e.target.result;
+                    img.classList.add("m-2", "border", "rounded");
+                    img.style.maxWidth = "120px";
+                    img.style.maxHeight = "120px";
+                    clientPreview.appendChild(img);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    });
+</script>
+<script>
+    function showLoading() {
+        document.getElementById('loading').style.display = 'block';
+    }
+</script>
 </body>
 </html>

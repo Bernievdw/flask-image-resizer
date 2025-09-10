@@ -196,6 +196,8 @@ def index():
                         zip_file.write(resized_path.lstrip("/"), arcname=os.path.basename(resized_path))
                 zip_file.close()
                 zip_buffer.seek(0)
+                with open("static/resized/resized_images.zip", "wb") as f:
+                    f.write(zip_buffer.getvalue())
                 return send_file(zip_buffer, mimetype="application/zip",
                                  download_name="resized_images.zip", as_attachment=True)
 
