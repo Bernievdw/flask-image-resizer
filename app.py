@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, send_file
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 import os, zipfile, io, logging, sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
@@ -12,7 +12,7 @@ os.makedirs(RESIZED_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["RESIZED_FOLDER"] = RESIZED_FOLDER
 
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif", "heic"}
 MAX_FILE_SIZE = 5 * 1024 * 1024 
 
 logging.basicConfig(level=logging.INFO)
@@ -51,19 +51,9 @@ def save_history(original_name, resized_name, width, height, fmt):
     conn.commit()
     conn.close()
 
-def get_history(limit=5):
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT original_name, resized_name, width, height, format FROM history ORDER BY id DESC LIMIT ?", (limit,))
-        rows = c.fetchall()
-        conn.close()
-        return rows
-    except Exception as e:
-        logging.error(f"Error fetching history: {e}")
-        return []
-
-def process_image(file, width, height, selected_format, quality, lock_aspect, prefix=""):
+def process_image(file, width, height, selected_format, quality, lock_aspect,
+                  prefix="", resize_mode="stretch", compress_only=False,
+                  watermark_path=None, watermark_text=None, preset=None):
     previews = []
     try:
         original_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
@@ -72,25 +62,61 @@ def process_image(file, width, height, selected_format, quality, lock_aspect, pr
         if os.path.getsize(original_path) > MAX_FILE_SIZE:
             raise ValueError(f"{file.filename} exceeds maximum size of 5MB.")
 
-        img = Image.open(original_path)
+        img = Image.open(original_path).convert("RGBA")
         original_width, original_height = img.size
 
-        new_width, new_height = width, height
-        if lock_aspect:
-            if width and not height:
-                new_height = int((width / original_width) * original_height)
-            elif height and not width:
-                new_width = int((height / original_height) * original_width)
-            elif width and height:
-                new_height = int((width / original_width) * original_height)
+        if preset:
+            presets = {
+                "instagram_story": (1080, 1920),
+                "youtube_thumbnail": (1280, 720),
+            }
+            if preset in presets:
+                width, height = presets[preset]
 
-        resized_img = img.resize((new_width, new_height))
+        if compress_only:
+            new_width, new_height = original_width, original_height
+            resized_img = img
+        else:
+            new_width, new_height = width, height
+            if lock_aspect and width and not height:
+                new_height = int((width / original_width) * original_height)
+            elif lock_aspect and height and not width:
+                new_width = int((height / original_height) * original_width)
+
+            if resize_mode == "crop":
+                resized_img = ImageOps.fit(img, (new_width, new_height), method=Image.Resampling.LANCZOS)
+            elif resize_mode == "fit":
+                resized_img = ImageOps.contain(img, (new_width, new_height))
+            elif resize_mode == "pad":
+                resized_img = ImageOps.pad(img, (new_width, new_height), color=(255,255,255,0))
+            else: 
+                resized_img = img.resize((new_width, new_height))
+
+        if watermark_path:
+            try:
+                wm = Image.open(watermark_path).convert("RGBA")
+                wm.thumbnail((int(resized_img.width * 0.3), int(resized_img.height * 0.3)))
+                position = (resized_img.width - wm.width - 10, resized_img.height - wm.height - 10)
+                resized_img.alpha_composite(wm, position)
+            except Exception as e:
+                logging.error(f"Watermark error: {e}")
+
+        if watermark_text:
+            from PIL import ImageDraw, ImageFont
+            draw = ImageDraw.Draw(resized_img)
+            font = ImageFont.load_default()
+            draw.text((10, resized_img.height - 20), watermark_text, fill=(255, 255, 255, 128), font=font)
+
         filename_no_ext = os.path.splitext(file.filename)[0]
         output_filename = f"{prefix}{filename_no_ext}_{new_width}x{new_height}.{selected_format.lower()}"
         resized_path = os.path.join(app.config["RESIZED_FOLDER"], output_filename)
+
+        if selected_format.lower() in ["jpg", "jpeg"]:
+            resized_img = resized_img.convert("RGB")
+
         resized_img.save(resized_path, format=selected_format.upper(), quality=quality)
 
-        logging.info(f"Resized {file.filename} → {output_filename}")
+        logging.info(f"Processed {file.filename} → {output_filename}")
         save_history(file.filename, output_filename, new_width, new_height, selected_format.upper())
 
         previews.append((
@@ -115,7 +141,10 @@ def index():
     zip_file = None
     lock_aspect = False
     prefix = ""
-    history = get_history()
+    resize_mode = "stretch"
+    compress_only = False
+    preset = None
+    watermark_text = None
 
     if request.method == "POST":
         try:
@@ -126,6 +155,16 @@ def index():
             quality = int(request.form.get("quality", 80))
             lock_aspect = bool(request.form.get("lock_aspect"))
             prefix = request.form.get("prefix", "")
+            resize_mode = request.form.get("resize_mode", "stretch")
+            compress_only = bool(request.form.get("compress_only"))
+            preset = request.form.get("preset")
+            watermark_text = request.form.get("watermark_text")
+
+            watermark_file = request.files.get("watermark")
+            watermark_path = None
+            if watermark_file and watermark_file.filename != "":
+                watermark_path = os.path.join(app.config["UPLOAD_FOLDER"], watermark_file.filename)
+                watermark_file.save(watermark_path)
 
             if len(files) == 0:
                 raise ValueError("No files uploaded.")
@@ -145,7 +184,9 @@ def index():
                 results = []
                 for file in files:
                     results.append(executor.submit(process_image, file, width, height,
-                                                   selected_format, quality, lock_aspect, prefix))
+                                                   selected_format, quality, lock_aspect,
+                                                   prefix, resize_mode, compress_only,
+                                                   watermark_path, watermark_text, preset))
                 for future in results:
                     previews.extend(future.result())
 
@@ -170,7 +211,10 @@ def index():
         selected_format=selected_format,
         lock_aspect=lock_aspect,
         prefix=prefix,
-        history=history
+        resize_mode=resize_mode,
+        compress_only=compress_only,
+        preset=preset,
+        watermark_text=watermark_text
     )
 
 if __name__ == "__main__":

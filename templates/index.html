@@ -41,18 +41,42 @@
         </div>
 
         <div class="mb-3">
-            <label for="prefix" class="form-label">Filename prefix (optional):</label>
-            <input type="text" class="form-control" name="prefix" value="{{ prefix }}">
+            <label for="preset" class="form-label">Resize Preset:</label>
+            <select name="preset" id="preset" class="form-select">
+                <option value="">-- None --</option>
+                <option value="instagram_story" {% if preset == "instagram_story" %}selected{% endif %}>Instagram Story (1080x1920)</option>
+                <option value="youtube_thumbnail" {% if preset == "youtube_thumbnail" %}selected{% endif %}>YouTube Thumbnail (1280x720)</option>
+            </select>
         </div>
 
         <div class="mb-3">
             <label for="width" class="form-label">Width (px):</label>
-            <input type="number" class="form-control" name="width" value="{{ width }}" required>
+            <input type="number" class="form-control" name="width" value="{{ width }}">
         </div>
 
         <div class="mb-3">
             <label for="height" class="form-label">Height (px):</label>
-            <input type="number" class="form-control" name="height" value="{{ height }}" required>
+            <input type="number" class="form-control" name="height" value="{{ height }}">
+        </div>
+
+        <div class="mb-3">
+            <label for="resize_mode" class="form-label">Resize Mode:</label>
+            <select name="resize_mode" class="form-select">
+                <option value="stretch" {% if resize_mode == "stretch" %}selected{% endif %}>Stretch (ignore aspect)</option>
+                <option value="crop" {% if resize_mode == "crop" %}selected{% endif %}>Crop to fit</option>
+                <option value="fit" {% if resize_mode == "fit" %}selected{% endif %}>Fit within box</option>
+                <option value="pad" {% if resize_mode == "pad" %}selected{% endif %}>Pad with background</option>
+            </select>
+        </div>
+
+        <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" name="lock_aspect" id="lock_aspect" {% if lock_aspect %}checked{% endif %}>
+            <label class="form-check-label" for="lock_aspect">Lock aspect ratio</label>
+        </div>
+
+        <div class="mb-3">
+            <label for="prefix" class="form-label">Filename prefix (optional):</label>
+            <input type="text" class="form-control" name="prefix" value="{{ prefix }}">
         </div>
 
         <div class="mb-3">
@@ -66,8 +90,8 @@
         </div>
 
         <div class="mb-3 form-check">
-            <input type="checkbox" class="form-check-input" name="lock_aspect" id="lock_aspect" {% if lock_aspect %}checked{% endif %}>
-            <label class="form-check-label" for="lock_aspect">Lock aspect ratio</label>
+            <input type="checkbox" class="form-check-input" name="compress_only" id="compress_only" {% if compress_only %}checked{% endif %}>
+            <label class="form-check-label" for="compress_only">Compression only (skip resize)</label>
         </div>
 
         <div class="mb-3">
@@ -75,9 +99,19 @@
             <input type="range" class="form-range" name="quality" min="10" max="100" value="80">
         </div>
 
+        <div class="mb-3">
+            <label class="form-label">Watermark image (optional):</label>
+            <input type="file" class="form-control" name="watermark" accept="image/*">
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Watermark text (optional):</label>
+            <input type="text" class="form-control" name="watermark_text" value="{{ watermark_text }}">
+        </div>
+
         <button type="submit" class="btn btn-primary">Resize Images</button>
     </form>
-
+    
     <div class="preview mb-4">
         {% if previews %}
             <h4>Previews:</h4>
@@ -96,20 +130,18 @@
         {% endif %}
     </div>
 
-    <div class="history mb-4">
-        {% if history %}
-            <h4>History (last 5 images):</h4>
-            {% for original_name, resized_name, width, height, fmt in history %}
-                <div class="d-flex align-items-center mb-2">
-                    <div class="me-3 text-center">
-                        <p>{{ original_name }}</p>
-                    </div>
-                    <div class="text-center">
-                        <p>{{ resized_name }} ({{ width }}x{{ height }}, {{ fmt }})</p>
-                    </div>
+    <div class="history">
+        <h4>History (last 5 images):</h4>
+        {% for row in history %}
+            <div class="d-flex align-items-center mb-2">
+                <div class="me-3 text-center">
+                    <p>{{ row[0] }}</p>
                 </div>
-            {% endfor %}
-        {% endif %}
+                <div class="text-center">
+                    <p>{{ row[1] }} ({{ row[2] }}x{{ row[3] }}, {{ row[4] }})</p>
+                </div>
+            </div>
+        {% endfor %}
     </div>
 
     <script>
@@ -123,7 +155,7 @@
             dropZone.classList.add('bg-light');
         });
 
-        dropZone.addEventListener('dragleave', (e) => {
+        dropZone.addEventListener('dragleave', () => {
             dropZone.classList.remove('bg-light');
         });
 
@@ -132,6 +164,16 @@
             dropZone.classList.remove('bg-light');
             const files = e.dataTransfer.files;
             fileInput.files = files;
+        });
+
+        document.getElementById("preset").addEventListener("change", function() {
+            if (this.value === "instagram_story") {
+                document.querySelector("[name=width]").value = 1080;
+                document.querySelector("[name=height]").value = 1920;
+            } else if (this.value === "youtube_thumbnail") {
+                document.querySelector("[name=width]").value = 1280;
+                document.querySelector("[name=height]").value = 720;
+            }
         });
     </script>
 </body>
