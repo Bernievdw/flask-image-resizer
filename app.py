@@ -78,16 +78,18 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            original_name TEXT,
-            resized_name TEXT,
-            width INTEGER,
-            height INTEGER,
-            format TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+    CREATE TABLE IF NOT EXISTS presets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        name TEXT NOT NULL,
+        width INTEGER,
+        height INTEGER,
+        format TEXT,
+        lock_aspect INTEGER,
+        quality INTEGER,
+        filter TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
     ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -163,115 +165,72 @@ def simple_bg_remove(img):
     img.putdata(new_data)
     return img
 
-def process_image(file, width, height, selected_format, quality, lock_aspect,
-                  prefix="", resize_mode="stretch", compress_only=False,
-                  watermark_path=None, watermark_text=None, preset=None,
-                  filter_name="none", remove_bg=False, user_id=None):
+def process_image(file, width, height, selected_format, quality, lock_aspect, prefix="",
+                  resize_mode="stretch", background_color=None,
+                  watermark_text=None, watermark_image=None,
+                  filter_name=None, strip_metadata=False):
     previews = []
     try:
         original_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
         file.save(original_path)
 
         if os.path.getsize(original_path) > MAX_FILE_SIZE:
-            raise ValueError(f"{file.filename} exceeds maximum size of {MAX_FILE_SIZE/1024/1024:.1f} MB.")
+            raise ValueError(f"{file.filename} exceeds maximum size of 5MB.")
 
         img = Image.open(original_path)
-        try:
-            img = img.convert("RGBA")
-        except Exception:
-            img = img.convert("RGBA")
-
         original_width, original_height = img.size
 
-        presets = {
-            "instagram_story": (1080, 1920),
-            "youtube_thumbnail": (1280, 720),
-        }
-        if preset in presets:
-            width, height = presets[preset]
+        # --- Resize logic (respect aspect ratio, crop, fit box, etc.)
+        new_width, new_height = width, height
+        if lock_aspect:
+            if width and not height:
+                new_height = int((width / original_width) * original_height)
+            elif height and not width:
+                new_width = int((height / original_height) * original_width)
+            elif width and height:
+                new_height = int((width / original_width) * original_height)
 
-        if compress_only:
-            new_width, new_height = original_width, original_height
-            resized_img = img
-        else:
-            new_width, new_height = width, height
-            if lock_aspect:
-                if width and not height:
-                    new_height = int((width / original_width) * original_height)
-                elif height and not width:
-                    new_width = int((height / original_height) * original_width)
-                elif width and height:
-                    new_height = int((width / original_width) * original_height)
+        # Resize
+        resized_img = img.resize((new_width, new_height))
 
-            if resize_mode == "crop":
-                resized_img = ImageOps.fit(img, (new_width, new_height), method=Image.Resampling.LANCZOS)
-            elif resize_mode == "fit":
-                resized_img = ImageOps.contain(img, (new_width, new_height))
-            elif resize_mode == "pad":
-                resized_img = ImageOps.pad(img, (new_width, new_height), color=(255,255,255,255))
-            else: 
-                resized_img = img.resize((new_width, new_height))
+        # --- Apply filters ---
+        if filter_name:
+            from PIL import ImageFilter, ImageOps
+            if filter_name == "grayscale":
+                resized_img = ImageOps.grayscale(resized_img)
+            elif filter_name == "sepia":
+                sepia = ImageOps.colorize(ImageOps.grayscale(resized_img), "#704214", "#C0A080")
+                resized_img = sepia
+            elif filter_name == "blur":
+                resized_img = resized_img.filter(ImageFilter.BLUR)
+            elif filter_name == "sharpen":
+                resized_img = resized_img.filter(ImageFilter.SHARPEN)
 
-        if remove_bg:
-            if REMBG_AVAILABLE:
-                try:
-                    with open(original_path, "rb") as f:
-                        input_bytes = f.read()
-                    output_bytes = rembg_remove(input_bytes)
-                    removed_img = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
-                    resized_img = removed_img if not (resized_img and resized_img.size) else ImageOps.contain(removed_img, resized_img.size)
-                except Exception as e:
-                    logging.error("rembg failed: %s", e)
-                    resized_img = simple_bg_remove(resized_img)
-            else:
-                resized_img = simple_bg_remove(resized_img)
-
-        if filter_name and filter_name != "none":
-            resized_img = apply_filter(resized_img, filter_name)
-
-        if watermark_path:
-            try:
-                wm = Image.open(watermark_path).convert("RGBA")
-                max_w = int(resized_img.width * 0.2)
-                w_ratio = max_w / wm.width if wm.width else 1
-                new_wm_size = (max_w, int(wm.height * w_ratio))
-                wm.thumbnail(new_wm_size, Image.Resampling.LANCZOS)
-                pos = (resized_img.width - wm.width - 10, resized_img.height - wm.height - 10)
-                temp = Image.new("RGBA", resized_img.size)
-                temp.paste(resized_img, (0,0))
-                temp.alpha_composite(wm, pos)
-                resized_img = temp
-            except Exception as e:
-                logging.error("watermark image error: %s", e)
-
+        # --- Apply watermark (text only for now) ---
         if watermark_text:
             from PIL import ImageDraw, ImageFont
             draw = ImageDraw.Draw(resized_img)
-            try:
-                font = ImageFont.load_default()
-            except Exception:
-                font = None
-            text_pos = (10, resized_img.height - 25)
-            draw.text(text_pos, watermark_text, fill=(255,255,255,180), font=font)
+            font = ImageFont.load_default()
+            draw.text((10, 10), watermark_text, fill="white", font=font)
 
+        # --- Save output ---
         filename_no_ext = os.path.splitext(file.filename)[0]
-        out_ext = selected_format.lower()
-        output_filename = f"{prefix}{filename_no_ext}_{new_width}x{new_height}.{out_ext}"
+        output_filename = f"{prefix}{filename_no_ext}_{new_width}x{new_height}.{selected_format.lower()}"
         resized_path = os.path.join(app.config["RESIZED_FOLDER"], output_filename)
 
-        if out_ext in ("jpg", "jpeg"):
-            save_img = resized_img.convert("RGB")
+        if strip_metadata:
+            resized_img.save(resized_path, format=selected_format.upper(), quality=quality)
         else:
-            save_img = resized_img
+            exif = img.info.get("exif")
+            resized_img.save(resized_path, format=selected_format.upper(), quality=quality, exif=exif)
 
-        save_img.save(resized_path, format=selected_format.upper(), quality=quality)
+        logging.info(f"Resized {file.filename} → {output_filename}")
+        save_history(file.filename, output_filename, new_width, new_height, selected_format.upper())
 
-        try:
-            save_history(user_id if user_id else None, file.filename, output_filename, new_width, new_height, selected_format.upper())
-        except Exception as e:
-            logging.error("Could not save history: %s", e)
-
-        previews.append((f"/{original_path.replace(os.sep, '/')}", f"/{resized_path.replace(os.sep, '/')}"))
+        previews.append((
+            f"/{original_path.replace(os.sep, '/')}",
+            f"/{resized_path.replace(os.sep, '/')}"
+        ))
     except UnidentifiedImageError:
         previews.append((None, None))
         logging.error(f"Cannot identify image file {file.filename}")
@@ -279,6 +238,25 @@ def process_image(file, width, height, selected_format, quality, lock_aspect,
         previews.append((None, None))
         logging.error(f"Error processing {file.filename}: {e}")
     return previews
+
+def save_preset(user_id, name, width, height, format, lock_aspect, quality, filter_name):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO presets (user_id, name, width, height, format, lock_aspect, quality, filter)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, name, width, height, format, int(lock_aspect), quality, filter_name))
+    conn.commit()
+    conn.close()
+
+def get_presets(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT id, name, width, height, format, lock_aspect, quality, filter FROM presets WHERE user_id = ?", (user_id,))
+    presets = c.fetchall()
+    conn.close()
+    return presets
+
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -377,15 +355,21 @@ def index():
                 zip_file = zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED)
 
             with ThreadPoolExecutor() as executor:
-                futures = []
+                results = [] 
                 for file in files:
-                    user_id = current_user.id if current_user.is_authenticated else None
-                    futures.append(executor.submit(
-                        process_image, file, width, height, selected_format, quality, lock_aspect,
-                        prefix, resize_mode, compress_only, watermark_path, watermark_text, preset,
-                        filter_name, remove_bg, user_id
+                    results.append(executor.submit(
+                        process_image,
+                        file, width, height,
+                        selected_format, quality,
+                        lock_aspect, prefix,
+                        request.form.get("resize_mode", "stretch"),
+                        request.form.get("background_color"),
+                        request.form.get("watermark_text"),
+                        None,  
+                        request.form.get("filter_name"),
+                        bool(request.form.get("strip_metadata"))
                     ))
-                for future in futures:
+                for future in results:
                     previews.extend(future.result())
 
             if zip_file:
