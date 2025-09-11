@@ -3,33 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <title>Image Resizer</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        #drop-zone {
-            border: 2px dashed #6c757d;
-            padding: 30px;
-            text-align: center;
-            cursor: pointer;
-        }
-        #drop-zone.bg-light {
-            background-color: #f8f9fa;
-        }
-        .preview img {
-            max-width: 150px;
-            margin: 5px;
-        }
-        .history img {
-            max-width: 100px;
-            margin: 3px;
-        }
+        #drop-zone { border: 2px dashed #6c757d; padding: 30px; text-align: center; cursor: pointer; }
+        #drop-zone.bg-light { background-color: #f8f9fa; }
+        .preview img { max-width: 150px; margin: 5px; }
+        .history img { max-width: 100px; margin: 3px; }
     </style>
 </head>
 <body class="container py-4">
-    <h1 class="mb-4">Image Resizer</h1>
+    <div class="d-flex justify-content-between align-items-center">
+        <h1>Image Resizer</h1>
+        <div>
+            {% if current_user.is_authenticated %}
+                <span class="me-2">Hello, {{ current_user.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout</a>
+            {% else %}
+                <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-sm me-2">Login</a>
+                <a href="{{ url_for('register') }}" class="btn btn-primary btn-sm">Register</a>
+            {% endif %}
+        </div>
+    </div>
 
     {% if error %}
         <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, msg in messages %}
+                <div class="alert alert-{{ category }} mt-2">{{ msg }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
 
     <form method="POST" enctype="multipart/form-data" class="mb-4" onsubmit="showLoading()">
         <div class="mb-3">
@@ -38,36 +44,55 @@
                 <p>Drag & drop images here or click to select files</p>
                 <input type="file" id="file-input" name="images" multiple required hidden>
             </div>
-            <div id="client-preview" class="d-flex flex-wrap mb-3"></div>
+            <div id="client-preview" class="d-flex flex-wrap mt-2"></div>
         </div>
 
-        <div class="mb-3">
-            <label for="preset" class="form-label">Resize Preset:</label>
-            <select name="preset" id="preset" class="form-select">
-                <option value="">-- None --</option>
-                <option value="instagram_story" {% if preset == "instagram_story" %}selected{% endif %}>Instagram Story (1080x1920)</option>
-                <option value="youtube_thumbnail" {% if preset == "youtube_thumbnail" %}selected{% endif %}>YouTube Thumbnail (1280x720)</option>
-            </select>
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label for="preset" class="form-label">Preset:</label>
+                <select name="preset" id="preset" class="form-select">
+                    <option value="">-- None --</option>
+                    <option value="instagram_story" {% if preset == "instagram_story" %}selected{% endif %}>Instagram Story (1080x1920)</option>
+                    <option value="youtube_thumbnail" {% if preset == "youtube_thumbnail" %}selected{% endif %}>YouTube Thumbnail (1280x720)</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Width (px):</label>
+                <input type="number" class="form-control" name="width" value="{{ width }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Height (px):</label>
+                <input type="number" class="form-control" name="height" value="{{ height }}">
+            </div>
         </div>
 
-        <div class="mb-3">
-            <label for="width" class="form-label">Width (px):</label>
-            <input type="number" class="form-control" name="width" value="{{ width }}">
-        </div>
-
-        <div class="mb-3">
-            <label for="height" class="form-label">Height (px):</label>
-            <input type="number" class="form-control" name="height" value="{{ height }}">
-        </div>
-
-        <div class="mb-3">
-            <label for="resize_mode" class="form-label">Resize Mode:</label>
-            <select name="resize_mode" class="form-select">
-                <option value="stretch" {% if resize_mode == "stretch" %}selected{% endif %}>Stretch (ignore aspect)</option>
-                <option value="crop" {% if resize_mode == "crop" %}selected{% endif %}>Crop to fit</option>
-                <option value="fit" {% if resize_mode == "fit" %}selected{% endif %}>Fit within box</option>
-                <option value="pad" {% if resize_mode == "pad" %}selected{% endif %}>Pad with background</option>
-            </select>
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label class="form-label">Resize Mode:</label>
+                <select name="resize_mode" class="form-select">
+                    <option value="stretch" {% if resize_mode == "stretch" %}selected{% endif %}>Stretch</option>
+                    <option value="crop" {% if resize_mode == "crop" %}selected{% endif %}>Crop</option>
+                    <option value="fit" {% if resize_mode == "fit" %}selected{% endif %}>Fit</option>
+                    <option value="pad" {% if resize_mode == "pad" %}selected{% endif %}>Pad</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Filter:</label>
+                <select name="filter" class="form-select">
+                    <option value="none" {% if filter_name == "none" %}selected{% endif %}>None</option>
+                    <option value="grayscale" {% if filter_name == "grayscale" %}selected{% endif %}>Black & White</option>
+                    <option value="sepia" {% if filter_name == "sepia" %}selected{% endif %}>Sepia</option>
+                    <option value="blur" {% if filter_name == "blur" %}selected{% endif %}>Blur</option>
+                    <option value="sharpen" {% if filter_name == "sharpen" %}selected{% endif %}>Sharpen</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Remove background:</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="remove_bg" id="remove_bg" {% if remove_bg %}checked{% endif %}>
+                    <label class="form-check-label" for="remove_bg">Remove BG (uses rembg if installed)</label>
+                </div>
+            </div>
         </div>
 
         <div class="mb-3 form-check">
@@ -76,48 +101,50 @@
         </div>
 
         <div class="mb-3">
-            <label for="prefix" class="form-label">Filename prefix (optional):</label>
+            <label class="form-label">Prefix (optional):</label>
             <input type="text" class="form-control" name="prefix" value="{{ prefix }}">
         </div>
 
-        <div class="mb-3">
-            <label for="format" class="form-label">Output format:</label>
-            <select name="format" class="form-select">
-                <option value="jpg" {% if selected_format == 'jpg' %}selected{% endif %}>JPG</option>
-                <option value="png" {% if selected_format == 'png' %}selected{% endif %}>PNG</option>
-                <option value="webp" {% if selected_format == 'webp' %}selected{% endif %}>WEBP</option>
-                <option value="gif" {% if selected_format == 'gif' %}selected{% endif %}>GIF</option>
-            </select>
-        </div>
-
-        <div class="mb-3 form-check">
-            <input type="checkbox" class="form-check-input" name="compress_only" id="compress_only" {% if compress_only %}checked{% endif %}>
-            <label class="form-check-label" for="compress_only">Compression only (skip resize)</label>
-        </div>
-
-        <div class="mb-3">
-            <label for="quality" class="form-label">Quality (JPEG/WEBP):</label>
-            <input type="range" class="form-range" name="quality" min="10" max="100" value="80">
+        <div class="row g-3 align-items-center mb-3">
+            <div class="col-md-4">
+                <label class="form-label">Output format:</label>
+                <select name="format" class="form-select">
+                    <option value="jpg" {% if selected_format == 'jpg' %}selected{% endif %}>JPG</option>
+                    <option value="png" {% if selected_format == 'png' %}selected{% endif %}>PNG</option>
+                    <option value="webp" {% if selected_format == 'webp' %}selected{% endif %}>WEBP</option>
+                    <option value="gif" {% if selected_format == 'gif' %}selected{% endif %}>GIF</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Compression only:</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="compress_only" id="compress_only" {% if compress_only %}checked{% endif %}>
+                    <label class="form-check-label" for="compress_only">Skip resize, only recompress</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Quality:</label>
+                <input type="range" class="form-range" name="quality" min="10" max="100" value="{{request.form.get('quality',80)}}">
+            </div>
         </div>
 
         <div class="mb-3">
             <label class="form-label">Watermark image (optional):</label>
             <input type="file" class="form-control" name="watermark" accept="image/*">
         </div>
-
         <div class="mb-3">
             <label class="form-label">Watermark text (optional):</label>
             <input type="text" class="form-control" name="watermark_text" value="{{ watermark_text }}">
         </div>
-        <div id="loading" class="text-center my-3" style="display: none;">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Processing...</span>
-            </div>
-            <p>Resizing images, please wait...</p>
+
+        <div id="loading" style="display:none" class="text-center my-3">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p>Processing images...</p>
         </div>
+
         <button type="submit" class="btn btn-primary">Resize Images</button>
     </form>
-    
+>
     <div class="preview mb-4">
         {% if previews %}
             <h4>Previews:</h4>
@@ -130,69 +157,56 @@
                     <div class="text-center">
                         <p>Resized</p>
                         {% if resized %}<img src="{{ resized }}" alt="Resized Image">{% endif %}
-                </div>
-            {% if previews|length > 1 %}
-                <div class="mb-3">
-                    <a href="/static/resized/resized_images.zip" class="btn btn-success">
-                        Download All as ZIP
-                    </a>
-            {% endif %}
+                    </div>
                 </div>
             {% endfor %}
+            {% if zip_link %}
+                <a class="btn btn-success" href="{{ zip_link }}">Download All as ZIP</a>
+            {% endif %}
         {% endif %}
     </div>
 
-    <div class="history">
-        <h4>History (last 5 images):</h4>
-        {% for row in history %}
-            <div class="d-flex align-items-center mb-2">
-                <div class="me-3 text-center">
-                    <p>{{ row[0] }}</p>
+    <div class="history mt-4">
+        <h4>History (recent):</h4>
+        {% if history %}
+            {% for row in history %}
+                <div class="d-flex align-items-center mb-2">
+                    <div class="me-3">
+                        <p class="mb-0"><strong>{{ row[0] }}</strong></p>
+                        <small class="text-muted">{{ row[5] }}</small>
+                    </div>
+                    <div>
+                        <p class="mb-0">{{ row[1] }} ({{ row[2] }}x{{ row[3] }}, {{ row[4] }})</p>
+                    </div>
                 </div>
-                <div class="text-center">
-                    <p>{{ row[1] }} ({{ row[2] }}x{{ row[3] }}, {{ row[4] }})</p>
-                </div>
-            </div>
-        {% endfor %}
+            {% endfor %}
+        {% else %}
+            <p>No history yet.</p>
+        {% endif %}
     </div>
 
-    <script>
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('file-input');
-
-        dropZone.addEventListener('click', () => fileInput.click());
-
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('bg-light');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('bg-light');
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('bg-light');
-            const files = e.dataTransfer.files;
-            fileInput.files = files;
-        });
-
-        document.getElementById("preset").addEventListener("change", function() {
-            if (this.value === "instagram_story") {
-                document.querySelector("[name=width]").value = 1080;
-                document.querySelector("[name=height]").value = 1920;
-            } else if (this.value === "youtube_thumbnail") {
-                document.querySelector("[name=width]").value = 1280;
-                document.querySelector("[name=height]").value = 720;
-            }
-        });
-    </script>
-    <script>
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
     const clientPreview = document.getElementById('client-preview');
+    const loading = document.getElementById('loading');
 
-    fileInput.addEventListener('change', () => {
-        clientPreview.innerHTML = ""; 
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('bg-light'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('bg-light'));
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('bg-light');
+        fileInput.files = e.dataTransfer.files;
+        showClientPreview();
+    });
+
+    fileInput.addEventListener('change', showClientPreview);
+
+    function showClientPreview() {
+        clientPreview.innerHTML = "";
         Array.from(fileInput.files).forEach(file => {
             if (file.type.startsWith("image/")) {
                 const reader = new FileReader();
@@ -207,12 +221,21 @@
                 reader.readAsDataURL(file);
             }
         });
-    });
-</script>
-<script>
-    function showLoading() {
-        document.getElementById('loading').style.display = 'block';
     }
+
+    function showLoading() {
+        loading.style.display = "block";
+    }
+
+    document.getElementById("preset").addEventListener("change", function() {
+        if (this.value === "instagram_story") {
+            document.querySelector("[name=width]").value = 1080;
+            document.querySelector("[name=height]").value = 1920;
+        } else if (this.value === "youtube_thumbnail") {
+            document.querySelector("[name=width]").value = 1280;
+            document.querySelector("[name=height]").value = 720;
+        }
+    });
 </script>
 </body>
 </html>
