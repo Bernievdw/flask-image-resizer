@@ -1,4 +1,6 @@
+import os
 import hashlib
+from PIL import Image   # <-- this is where Image comes from
 
 THUMB_DIR = "static/thumbnails"
 os.makedirs(THUMB_DIR, exist_ok=True)

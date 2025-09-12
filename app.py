@@ -26,6 +26,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB per file
 logging.basicConfig(level=logging.INFO)
 
 DB_PATH = "image_history.db"
+DB_NAME = "db_image_save"
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -180,7 +181,6 @@ def process_image(file, width, height, selected_format, quality, lock_aspect, pr
         img = Image.open(original_path)
         original_width, original_height = img.size
 
-        # --- Resize logic (respect aspect ratio, crop, fit box, etc.)
         new_width, new_height = width, height
         if lock_aspect:
             if width and not height:
@@ -190,10 +190,8 @@ def process_image(file, width, height, selected_format, quality, lock_aspect, pr
             elif width and height:
                 new_height = int((width / original_width) * original_height)
 
-        # Resize
         resized_img = img.resize((new_width, new_height))
 
-        # --- Apply filters ---
         if filter_name:
             from PIL import ImageFilter, ImageOps
             if filter_name == "grayscale":
@@ -206,14 +204,12 @@ def process_image(file, width, height, selected_format, quality, lock_aspect, pr
             elif filter_name == "sharpen":
                 resized_img = resized_img.filter(ImageFilter.SHARPEN)
 
-        # --- Apply watermark (text only for now) ---
         if watermark_text:
             from PIL import ImageDraw, ImageFont
             draw = ImageDraw.Draw(resized_img)
             font = ImageFont.load_default()
             draw.text((10, 10), watermark_text, fill="white", font=font)
 
-        # --- Save output ---
         filename_no_ext = os.path.splitext(file.filename)[0]
         output_filename = f"{prefix}{filename_no_ext}_{new_width}x{new_height}.{selected_format.lower()}"
         resized_path = os.path.join(app.config["RESIZED_FOLDER"], output_filename)
