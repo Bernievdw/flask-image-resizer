@@ -200,19 +200,19 @@
                 <div class="d-flex align-items-center mb-3">
                     <div class="me-3 text-center">
                         <p>Original</p>
-                        {% if original %}<img src="{{ original }}" alt="Original Image">{% endif %}
                     </div>
                     <div class="text-center">
                         <p>Resized</p>
-                        {% if resized %}<img src="{{ resized }}" alt="Resized Image">{% endif %}
+                        {% if resized %}
+                            <img src="{{ resized }}" alt="Resized Image">
+                            <a href="{{ resized }}" download class="btn btn-sm btn-success mt-1">Download</a>
+                        {% endif %}
                     </div>
                 </div>
             {% endfor %}
-            {% if zip_link %}
-                <a class="btn btn-success" href="{{ zip_link }}">Download All as ZIP</a>
-            {% endif %}
         {% endif %}
     </div>
+
 
     <div class="history mt-4">
         <h4>History (recent):</h4>

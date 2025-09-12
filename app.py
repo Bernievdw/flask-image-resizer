@@ -29,6 +29,7 @@ logging.basicConfig(level=logging.INFO)
 
 DB_PATH = "image_history.db"
 DB_NAME = "db_image_save"
+temp_images = {}
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -168,43 +169,40 @@ def simple_bg_remove(img):
     img.putdata(new_data)
     return img
 
-def process_image(file, width, height, selected_format, quality, lock_aspect, prefix="",
-                  resize_mode="stretch", background_color=None,
-                  watermark_text=None, watermark_image=None,
-                  filter_name=None, strip_metadata=False):
+def process_image(
+    file, width, height, selected_format, quality, lock_aspect, prefix,
+    resize_mode="stretch", background_color=None, watermark_text=None,
+    watermark_file=None, filter_name="none", strip_metadata=False
+):
     previews = []
     try:
-        original_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-        file.save(original_path)
-
-        if os.path.getsize(original_path) > MAX_FILE_SIZE:
-            raise ValueError(f"{file.filename} exceeds maximum size of 5MB.")
-
-        img = Image.open(original_path)
-        original_width, original_height = img.size
+        img = Image.open(file)
 
         new_width, new_height = width, height
         if lock_aspect:
-            if width and not height:
-                new_height = int((width / original_width) * original_height)
-            elif height and not width:
-                new_width = int((height / original_height) * original_width)
-            elif width and height:
-                new_height = int((width / original_width) * original_height)
+            if new_width is None and new_height is None:
+                new_width, new_height = img.size 
+            elif new_width is None:
+                new_width = int((new_height / img.height) * img.width)
+            elif new_height is None:
+                new_height = int((new_width / img.width) * img.height)
 
-        resized_img = img.resize((new_width, new_height))
+            new_width = int(new_width)
+            new_height = int(new_height)
 
-        if filter_name:
-            from PIL import ImageFilter, ImageOps
-            if filter_name == "grayscale":
-                resized_img = ImageOps.grayscale(resized_img)
-            elif filter_name == "sepia":
-                sepia = ImageOps.colorize(ImageOps.grayscale(resized_img), "#704214", "#C0A080")
-                resized_img = sepia
-            elif filter_name == "blur":
-                resized_img = resized_img.filter(ImageFilter.BLUR)
-            elif filter_name == "sharpen":
-                resized_img = resized_img.filter(ImageFilter.SHARPEN)
+            img.thumbnail((new_width, new_height))
+
+        if resize_mode == "stretch":
+            resized_img = img.resize((new_width, new_height))
+        elif resize_mode == "fit":
+            img.thumbnail((new_width, new_height))
+            resized_img = img
+        elif resize_mode == "crop":
+            left = (original_width - new_width) // 2
+            top = (original_height - new_height) // 2
+            right = left + new_width
+            bottom = top + new_height
+            resized_img = img.crop((left, top, right, bottom))
 
         if watermark_text:
             from PIL import ImageDraw, ImageFont
@@ -212,30 +210,34 @@ def process_image(file, width, height, selected_format, quality, lock_aspect, pr
             font = ImageFont.load_default()
             draw.text((10, 10), watermark_text, fill="white", font=font)
 
+        if filter_name == "grayscale":
+            resized_img = resized_img.convert("L")
+
+        resized_img = img.resize((new_width, new_height))
         filename_no_ext = os.path.splitext(file.filename)[0]
         output_filename = f"{prefix}{filename_no_ext}_{new_width}x{new_height}.{selected_format.lower()}"
+
+        # Save to disk
         resized_path = os.path.join(app.config["RESIZED_FOLDER"], output_filename)
+        resized_img.save(resized_path, format=selected_format.upper(), quality=quality)
 
-        if strip_metadata:
-            resized_img.save(resized_path, format=selected_format.upper(), quality=quality)
-        else:
-            exif = img.info.get("exif")
-            resized_img.save(resized_path, format=selected_format.upper(), quality=quality, exif=exif)
+        # Return preview info including filename for download link
+        previews.append((None, f"/download/{output_filename}"))
 
-        logging.info(f"Resized {file.filename} → {output_filename}")
-        save_history(file.filename, output_filename, new_width, new_height, selected_format.upper())
 
-        previews.append((
-            f"/{original_path.replace(os.sep, '/')}",
-            f"/{resized_path.replace(os.sep, '/')}"
-        ))
-    except UnidentifiedImageError:
-        previews.append((None, None))
-        logging.error(f"Cannot identify image file {file.filename}")
     except Exception as e:
         previews.append((None, None))
-        logging.error(f"Error processing {file.filename}: {e}")
+        import traceback
+        traceback.print_exc()
+
     return previews
+
+@app.route("/preview/<filename>")
+def download(filename):
+    path = os.path.join(app.config["RESIZED_FOLDER"], filename)
+    if os.path.exists(path):
+        return send_file(path, as_attachment=True)
+    return "File not found", 404
 
 def save_preset(user_id, name, width, height, format, lock_aspect, quality, filter_name):
     conn = sqlite3.connect(DB_NAME)
@@ -362,18 +364,18 @@ def index():
                 zip_file = zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED)
 
             with ThreadPoolExecutor() as executor:
-                results = [] 
+                results = []
                 for file in files:
                     results.append(executor.submit(
-                        process_image,
+                        process_image,  
                         file, width, height,
                         selected_format, quality,
                         lock_aspect, prefix,
-                        request.form.get("resize_mode", "stretch"),
+                        resize_mode,
                         request.form.get("background_color"),
-                        request.form.get("watermark_text"),
-                        None,  
-                        request.form.get("filter_name"),
+                        watermark_text,
+                        watermark_file if 'watermark_file' in locals() else None,
+                        filter_name,
                         bool(request.form.get("strip_metadata"))
                     ))
                 for future in results:
@@ -418,4 +420,4 @@ def index():
     )
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
