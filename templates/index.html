@@ -5,6 +5,8 @@
     <title>Image Resizer</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
     <style>
         #drop-zone { border: 2px dashed #6c757d; padding: 30px; text-align: center; cursor: pointer; }
         #drop-zone.bg-light { background-color: #f8f9fa; }
@@ -144,7 +146,53 @@
 
         <button type="submit" class="btn btn-primary">Resize Images</button>
     </form>
->
+
+    <div class="mb-3">
+        <label class="form-label">Crop Image (optional):</label>
+        <input type="file" id="crop-input" accept="image/*">
+        <div id="crop-container" style="max-width: 400px; margin-top: 10px;">
+            <img id="crop-preview" style="max-width: 100%; display:none;">
+        </div>
+        <input type="hidden" name="cropped_image" id="cropped_image">
+        <button type="button" id="crop-btn" class="btn btn-secondary mt-2" style="display:none;">Apply Crop</button>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
+    <script>
+        let cropper;
+        const cropInput = document.getElementById('crop-input');
+        const cropPreview = document.getElementById('crop-preview');
+        const croppedImageInput = document.getElementById('cropped_image');
+        const cropBtn = document.getElementById('crop-btn');
+
+        cropInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const url = URL.createObjectURL(file);
+            cropPreview.src = url;
+            cropPreview.style.display = 'block';
+            
+            if (cropper) cropper.destroy();
+            cropper = new Cropper(cropPreview, {
+                aspectRatio: NaN, // free crop
+                viewMode: 1,
+                autoCropArea: 1,
+            });
+
+            cropBtn.style.display = 'inline-block';
+        });
+
+        cropBtn.addEventListener('click', () => {
+            if (!cropper) return;
+            const canvas = cropper.getCroppedCanvas();
+            croppedImageInput.value = canvas.toDataURL('image/jpeg');
+            alert('Cropped image applied! Now submit the form.');
+        });
+    </script>
+
     <div class="preview mb-4">
         {% if previews %}
             <h4>Previews:</h4>
@@ -237,5 +285,6 @@
         }
     });
 </script>
+
 </body>
 </html>

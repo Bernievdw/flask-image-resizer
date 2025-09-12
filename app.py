@@ -2,7 +2,9 @@ from flask import Flask, render_template, request, send_file, redirect, url_for,
 from PIL import Image, ImageOps, ImageFilter, UnidentifiedImageError
 import os, zipfile, io, logging, sqlite3
 from concurrent.futures import ThreadPoolExecutor
+import base64
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.datastructures import FileStorage
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
 
 try:
@@ -315,6 +317,15 @@ def index():
     history = get_history(current_user.id if current_user.is_authenticated else None, limit=8)
 
     if request.method == "POST":
+        cropped_image_data = request.form.get("cropped_image")
+        if cropped_image_data:
+            header, encoded = cropped_image_data.split(",", 1)
+            data = base64.b64decode(encoded)
+            temp_path = os.path.join(app.config["UPLOAD_FOLDER"], "cropped_upload.jpg")
+            with open(temp_path, "wb") as f:
+                f.write(data)
+            with open(temp_path, "rb") as f:
+                files = [FileStorage(f, filename="cropped_upload.jpg")]
         try:
             files = request.files.getlist("images")
             width = request.form.get("width")
@@ -382,6 +393,7 @@ def index():
                 zip_link = None
 
             history = get_history(current_user.id if current_user.is_authenticated else None, limit=8)
+            
 
         except Exception as e:
             error = f"Something went wrong: {e}"
