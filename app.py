@@ -217,13 +217,9 @@ def process_image(
         filename_no_ext = os.path.splitext(file.filename)[0]
         output_filename = f"{prefix}{filename_no_ext}_{new_width}x{new_height}.{selected_format.lower()}"
 
-        # Save to disk
         resized_path = os.path.join(app.config["RESIZED_FOLDER"], output_filename)
         resized_img.save(resized_path, format=selected_format.upper(), quality=quality)
-
-        # Return preview info including filename for download link
         previews.append((None, f"/download/{output_filename}"))
-
 
     except Exception as e:
         previews.append((None, None))
